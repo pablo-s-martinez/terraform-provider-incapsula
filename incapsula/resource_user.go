@@ -1,6 +1,7 @@
 package incapsula
 
 import (
+	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"log"
 	"strconv"
@@ -85,7 +86,7 @@ func resourceUserCreate(d *schema.ResourceData, m interface{}) error {
 	}
 
 	// Set the User ID
-	d.SetId(strconv.Itoa(accountId) + "__" + email)
+	d.SetId(fmt.Sprintf("%s_%s", strconv.Itoa(accountId), email))
 	log.Printf("[INFO] Created Incapsula user for email: %s userid: %d\n", email, UserAddResponse.UserID)
 
 	// There may be a timing/race condition here
@@ -99,7 +100,7 @@ func resourceUserCreate(d *schema.ResourceData, m interface{}) error {
 func resourceUserRead(d *schema.ResourceData, m interface{}) error {
 	client := m.(*Client)
 	userID := d.Id()
-	stringSlice := strings.Split(userID, "__")
+	stringSlice := strings.Split(userID, "_")
 	accountID, _ := strconv.Atoi(stringSlice[0])
 	email := stringSlice[1]
 	log.Printf("[INFO] Reading Incapsula user : %s\n", userID)
