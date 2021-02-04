@@ -14,6 +14,7 @@ import (
 // Endpoints (unexported consts)
 const endpointUserAdd = "user-management/v1/users"
 const endpointUserStatus = "user-management/v1/users"
+const endpointUserUpdate = "user-management/v1/assignments"
 const endpointUserDelete = "user-management/v1/users"
 
 // UserAddResponse contains the relevant user inform	ation when adding an Incapsula user
@@ -42,24 +43,42 @@ type UserStatusResponse struct {
 	} `json:"rolesDetails"`
 }
 
+type UserUpdateResponse struct {
+	UserID    int    `json:"userId"`
+	AccountID int    `json:"accountId"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	Email     string `json:"userEmail"`
+	Roles     []struct {
+		RoleID   int    `json:"roleId"`
+		RoleName string `json:"roleName"`
+	} `json:"rolesDetails"`
+}
+
 type UserReq struct {
-	AccountId int      `json:"accountId"`
-	UserEmail string   `json:"userEmail"`
-	RoleNames []string `json:"roleNames"`
-	FirstName string   `json:"firstName"`
-	LastName  string   `json:"lastName"`
+	AccountId int    `json:"accountId"`
+	UserEmail string `json:"userEmail"`
+	RoleIds   []int  `json:"roleIds"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+}
+
+type UserUpdateReq struct {
+	UserEmail string `json:"userEmail"`
+	AccountId int    `json:"accountId"`
+	RoleIds   []int  `json:"roleIds"`
 }
 
 // AddUser adds a user to Incapsula Account
-func (c *Client) AddUser(accountID int, email string, roleNames []interface{}, firstName string, lastName string) (*UserAddResponse, error) {
+func (c *Client) AddUser(accountID int, email string, roleIds []interface{}, firstName string, lastName string) (*UserAddResponse, error) {
 	log.Printf("[INFO] Adding Incapsula User for email: %s (account ID %d)\n", email, accountID)
 
-	listRoles := make([]string, len(roleNames))
-	for i, v := range roleNames {
-		listRoles[i] = fmt.Sprint(v)
+	listRoles := make([]int, len(roleIds))
+	for i, v := range roleIds {
+		listRoles[i] = v.(int)
 	}
 
-	userReq := UserReq{AccountId: accountID, UserEmail: email, RoleNames: listRoles, FirstName: firstName, LastName: lastName}
+	userReq := UserReq{AccountId: accountID, UserEmail: email, RoleIds: listRoles, FirstName: firstName, LastName: lastName}
 
 	userJSON, err := json.Marshal(userReq)
 	if err != nil {
@@ -132,6 +151,56 @@ func (c *Client) UserStatus(accountID int, email string) (*UserStatusResponse, e
 
 	log.Printf("[INFO] ResponseStruct : %+v\n", userStatusResponse)
 	return &userStatusResponse, nil
+}
+
+// Updates User Roles
+func (c *Client) UpdateUser(accountID int, email string, roleIds []interface{}) (*UserUpdateResponse, error) {
+	log.Printf("[INFO] Update Incapsula User for email: %s (account ID %d)\n", email, accountID)
+
+	listRoles := make([]int, len(roleIds))
+	for i, v := range roleIds {
+		listRoles[i] = v.(int)
+	}
+
+	UserUpdateReq := []UserUpdateReq{{AccountId: accountID, UserEmail: email, RoleIds: listRoles}}
+
+	userJSON, err := json.Marshal(UserUpdateReq)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to JSON marshal IncapRule: %s", err)
+	}
+
+	log.Printf("[INFO] Req: %s\n", fmt.Sprintf("%s/%s", c.config.BaseURLAPI, endpointUserUpdate))
+	log.Printf("[INFO] json: %s\n", userJSON)
+
+	resp, err := c.httpClient.Post(
+		fmt.Sprintf("%s/%s?api_id=%s&api_key=%s", c.config.BaseURLAPI, endpointUserUpdate, c.config.APIID, c.config.APIKey),
+		"application/json",
+		bytes.NewReader(userJSON))
+	if err != nil {
+		return nil, fmt.Errorf("Error updating user email %s: %s", email, err)
+	}
+
+	// Read the body
+	defer resp.Body.Close()
+	responseBody, err := ioutil.ReadAll(resp.Body)
+
+	// Dump JSON
+	log.Printf("[DEBUG] Incapsula update user JSON response: %s\n", string(responseBody))
+
+	// Look at the response status code from Incapsula
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("Error status code %d from Incapsula service when updating User %s: %s", resp.StatusCode, email, string(responseBody))
+	}
+
+	// Parse the JSON
+	var userUpdateResponse []UserUpdateResponse
+	err = json.Unmarshal([]byte(responseBody), &userUpdateResponse)
+	if err != nil {
+		return nil, fmt.Errorf("Error parsing update user JSON response for email %s: %s", email, err)
+	}
+
+	log.Printf("[INFO] ResponseStruct : %+v\n", userUpdateResponse)
+	return &userUpdateResponse[0], nil
 }
 
 // DeleteUser deletes a user from Incapsula

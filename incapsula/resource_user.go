@@ -11,6 +11,7 @@ func resourceUser() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceUserCreate,
 		Read:   resourceUserRead,
+		Update: resourceUserUpdate,
 		Delete: resourceUserDelete,
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
@@ -42,14 +43,21 @@ func resourceUser() *schema.Resource {
 				Optional:    true,
 				ForceNew:    true,
 			},
+			"role_ids": {
+				Description: "List of role ids to add to the user.",
+				Type:        schema.TypeList,
+				Elem: &schema.Schema{
+					Type: schema.TypeInt,
+				},
+				Optional: true,
+			},
 			"role_names": {
-				Description: "List of role names to add to the user. Use roleIds or roleNames to add roles to the user, but not both.",
+				Description: "List of role names.",
 				Type:        schema.TypeList,
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
-				Optional: true,
-				ForceNew: true,
+				Computed: true,
 			},
 		},
 	}
@@ -65,7 +73,7 @@ func resourceUserCreate(d *schema.ResourceData, m interface{}) error {
 	UserAddResponse, err := client.AddUser(
 		accountId,
 		email,
-		d.Get("role_names").([]interface{}),
+		d.Get("role_ids").([]interface{}),
 		d.Get("first_name").(string),
 		d.Get("last_name").(string),
 	)
@@ -103,24 +111,51 @@ func resourceUserRead(d *schema.ResourceData, m interface{}) error {
 
 	log.Printf("[INFO]listRoles : %v\n", UserStatusResponse.Roles)
 
-	time.Sleep(5 * time.Second)
-
-	listRoles := make([]interface{}, len(UserStatusResponse.Roles))
+	listRolesids := make([]interface{}, len(UserStatusResponse.Roles))
+	listRolesnames := make([]interface{}, len(UserStatusResponse.Roles))
 	for i, v := range UserStatusResponse.Roles {
 		log.Printf("[INFO]listRoles : %v\n", UserStatusResponse.Roles)
-		time.Sleep(3 * time.Second)
-		listRoles[i] = v.RoleName
+		listRolesids[i] = v.RoleID
+		listRolesnames[i] = v.RoleName
 	}
 
 	d.Set("email", UserStatusResponse.Email)
 	d.Set("account_id", UserStatusResponse.AccountID)
 	d.Set("first_name", UserStatusResponse.FirstName)
 	d.Set("last_name", UserStatusResponse.LastName)
-	d.Set("role_names", listRoles)
+	d.Set("role_ids", listRolesids)
+	d.Set("role_names", listRolesnames)
 
 	log.Printf("[INFO] Finished reading Incapsula user: %s\n", email)
 
 	return nil
+}
+
+func resourceUserUpdate(d *schema.ResourceData, m interface{}) error {
+	client := m.(*Client)
+	email := d.Get("email").(string)
+	accountId := d.Get("account_id").(int)
+
+	log.Printf("[INFO] Creating Incapsula user for email: %s\n", email)
+
+	UserUpdateResponse, err := client.UpdateUser(
+		accountId,
+		email,
+		d.Get("role_ids").([]interface{}),
+	)
+	if err != nil {
+		log.Printf("[ERROR] Could not update user for email: %s, %s\n", email, err)
+		return err
+	}
+
+	log.Printf("[Info] New Roles for user %s : %+v\n", email, UserUpdateResponse.Roles)
+
+	// There may be a timing/race condition here
+	// Set an arbitrary period to sleep
+	time.Sleep(3 * time.Second)
+
+	// Set the rest of the state from the resource read
+	return resourceUserRead(d, m)
 }
 
 func resourceUserDelete(d *schema.ResourceData, m interface{}) error {
