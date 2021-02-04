@@ -4,6 +4,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -84,8 +85,8 @@ func resourceUserCreate(d *schema.ResourceData, m interface{}) error {
 	}
 
 	// Set the User ID
-	d.SetId(strconv.Itoa(UserAddResponse.UserID))
-	log.Printf("[INFO] Created Incapsula user for email: %s\n", email)
+	d.SetId(strconv.Itoa(accountId) + "__" + email)
+	log.Printf("[INFO] Created Incapsula user for email: %s userid: %d\n", email, UserAddResponse.UserID)
 
 	// There may be a timing/race condition here
 	// Set an arbitrary period to sleep
@@ -97,10 +98,11 @@ func resourceUserCreate(d *schema.ResourceData, m interface{}) error {
 
 func resourceUserRead(d *schema.ResourceData, m interface{}) error {
 	client := m.(*Client)
-	userID, _ := strconv.Atoi(d.Id())
-	accountID := d.Get("account_id").(int)
-	email := d.Get("email").(string)
-	log.Printf("[INFO] Reading Incapsula user : %d\n", userID)
+	userID := d.Id()
+	stringSlice := strings.Split(userID, "__")
+	accountID, _ := strconv.Atoi(stringSlice[0])
+	email := stringSlice[1]
+	log.Printf("[INFO] Reading Incapsula user : %s\n", userID)
 
 	UserStatusResponse, err := client.UserStatus(accountID, email)
 
